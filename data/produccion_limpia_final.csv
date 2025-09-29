@@ -1,0 +1,38 @@
+fecha,equipo,turno,muestras_procesadas,rendimiento,comentario,fecha_original,equipo_original,turno_original,muestras_procesadas_original,rendimiento_original,comentario_original
+2024-11-26,phmetro,noche,54,70,sin_comentario,11-26-2024,PHMETRO,noche,54.0,70.41,
+2024-02-17,phmetro,tarde,89,72,ok,17/02/2024,PHMETRO,tarde,89.0,71.9,ok
+2025-02-10,analizador hematologico,tarde,99,94,ok,02-10-2025, ANALIZADOR HEMATOLÓGICO ,tarde,99.0,93.71,ok
+2023-10-06,centrifuga,manana,41,71,ok,2023-10-06,centrífuga,mañana,41.0,70.89,ok
+2024-09-14,centrifuga,manana,37,67,ok,2024-09-14,Centrífuga,mañana,37.0,66.96,ok
+2023-09-24,centrifuga,manana,78,70,repetir,09-24-2023,CENTRIFUGA,mañana,78.0,70.35,repetir
+2023-09-29,centrifuga,manana,92,70,repetir,2023-09-29,centrifuga ,mañana,92.0,69.93,repetir
+2024-01-15,phmetro,noche,57,81,sin_comentario,01-15-2024,PHMETRO,noche,57.0,81.0,
+2024-10-28,centrifuga,noche,99,74,repetir,2024-10-28,Centrífuga,noche,99.0,74.2,repetir
+2025-01-25,centrifuga,noche,97,72,ok,01-25-2025,CENTRIFUGA,noche,97.0,71.71,ok
+2025-01-13,centrifuga,manana,40,72,sin_comentario,01-13-2025,centrífuga,mañana,40.0,71.53,
+2024-02-20,espectrofotometro,tarde,106,77,ok,2024-02-20,ESPECTROFOTÓMETRO,tarde,106.0,76.77,ok
+2025-04-07,centrifuga,tarde,109,86,sin_comentario,2025-04-07,Centrífuga,tarde,109.0,85.53,
+2025-01-11,espectrofotometro,tarde,70,85,ok,2025-01-11,Espectrofotómetro,tarde,70.0,84.68,ok
+2024-01-02,analizador hematologico,tarde,39,79,ok,2024-01-02,analizador hematologico,tarde,39.0,78.53,ok
+2024-04-05,phmetro,noche,102,85,sin_comentario,05/04/2024,PHMETRO,noche,102.0,84.56,
+2024-05-09,phmetro,noche,63,86,sin_comentario,2024-05-09,PHMETRO,noche,63.0,85.59,
+2025-04-05,espectrofotometro,manana,97,93,sin_comentario,04-05-2025,espectrofotometro,mañana,97.0,93.09,
+2024-07-09,espectrofotometro,tarde,43,97,sin_comentario,07-09-2024,Espectrofotómetro,tarde,43.0,97.05,
+2024-09-07,analizador hematologico,manana,63,84,sin_comentario,07/09/2024, ANALIZADOR HEMATOLÓGICO ,mañana,63.0,83.89,
+2025-07-04,phmetro,manana,100,81,sin_comentario,2025-07-04,phmetro,mañana,100.0,81.37,
+2023-09-18,phmetro,noche,107,70,sin_comentario,2023-09-18,PHMETRO,noche,107.0,70.11,
+2024-09-19,espectrofotometro,tarde,73,85,ok,2024-09-19,Espectrofotómetro,tarde,73.0,84.87,ok
+2024-11-10,phmetro,noche,36,71,sin_comentario,2024-11-10,PHMETRO,noche,36.0,70.6,
+2023-12-15,analizador hematologico,tarde,63,81,sin_comentario,15/12/2023,Analizador Hematológico,tarde,63.0,81.16,
+2023-08-23,phmetro,manana,101,87,repetir,2023-08-23,phmetro,mañana,101.0,87.13,repetir
+2024-12-13,phmetro,manana,44,90,ok,13/12/2024,phmetro,mañana,44.0,89.86,ok
+2024-01-12,centrifuga,noche,118,60,repetir,12/01/2024,CENTRIFUGA,noche,118.0,60.23,repetir
+2025-03-10,espectrofotometro,tarde,99,89,sin_comentario,2025-03-10,Espectrofotómetro,tarde,99.0,89.39,
+2023-09-18,analizador hematologico,tarde,100,89,repetir,18/09/2023,Analizador Hematológico,tarde,100.0,89.15,repetir
+2025-05-13,espectrofotometro,tarde,85,84,sin_comentario,05-13-2025,Espectrofotómetro,tarde,85.0,83.53,
+2025-05-22,phmetro,noche,76,61,sin_comentario,05-22-2025,PHMETRO,noche,76.0,61.13,
+2023-10-05,centrifuga,manana,75,86,ok,2023-10-05,CENTRIFUGA,mañana,75.0,86.49,ok
+2024-05-09,phmetro,noche,117,66,ok,05-09-2024,PHMETRO,noche,117.0,66.44,ok
+2024-02-19,espectrofotometro,noche,115,65,sin_comentario,02-19-2024,Espectrofotómetro,noche,115.0,64.98,
+2024-04-27,centrifuga,tarde,50,65,sin_comentario,2024-04-27,centrifuga ,tarde,50.0,65.29,
+2023-11-22,phmetro,noche,82,62,sin_comentario,2023-11-22,phMetro,noche,82.0,61.96,

@@ -1,0 +1,382 @@
+{
+  "name": "Lab Alert Monitoring",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "seconds",
+              "secondsInterval": 5
+            }
+          ]
+        },
+        "timezone": "America/Mexico_City"
+      },
+      "id": "cron-trigger-realtime",
+      "name": "Real-time Monitoring (5 seconds)",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://api_gateway:8000/data/chemical-summary",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "start_date",
+              "value": "={{ new Date(Date.now() - 24*60*60*1000).toISOString().split('T')[0] }}"
+            },
+            {
+              "name": "end_date",
+              "value": "={{ new Date().toISOString().split('T')[0] }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "get-recent-data",
+      "name": "Get Recent Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Analizar datos químicos para detectar anomalías específicas del laboratorio\nconst data = $input.first().json;\n\nconst alerts = [];\nconst warnings = [];\n\n// Verificar rendimiento químico bajo (basado en estructura CSV)\nif (data.avg_rendimiento < 75) {\n  alerts.push({\n    type: 'rendimiento_quimico',\n    severity: data.avg_rendimiento < 60 ? 'high' : 'medium',\n    message: `Rendimiento químico promedio: ${data.avg_rendimiento.toFixed(1)}%`,\n    threshold: '75%',\n    current_value: `${data.avg_rendimiento.toFixed(1)}%`,\n    timestamp: new Date().toISOString()\n  });\n}\n\n// Verificar equipos químicos con problemas\nconst equipos_quimicos = ['phmetro', 'espectrofotometro', 'centrifuga', 'analizador hematologico'];\nif (data.equipment_status) {\n  equipos_quimicos.forEach(equipo => {\n    const status = data.equipment_status[equipo];\n    if (status && status.status !== 'ok') {\n      alerts.push({\n        type: 'equipo_quimico',\n        severity: 'high',\n        message: `Problema en ${equipo}: ${status.comentario || 'Estado no OK'}`,\n        equipment: equipo,\n        timestamp: new Date().toISOString()\n      });\n    }\n  });\n}\n\n// Verificar muestras procesadas muy bajas\nif (data.total_muestras_procesadas < 50) {\n  warnings.push({\n    type: 'baja_produccion',\n    severity: 'medium',\n    message: `Pocas muestras procesadas: ${data.total_muestras_procesadas}`,\n    expected: '> 50 muestras/día',\n    timestamp: new Date().toISOString()\n  });\n}\n\n// Verificar alta tasa de repeticiones\nif (data.tasa_repeticiones > 0.2) {\n  alerts.push({\n    type: 'alta_repeticion',\n    severity: data.tasa_repeticiones > 0.3 ? 'high' : 'medium',\n    message: `Alta tasa de repeticiones: ${(data.tasa_repeticiones * 100).toFixed(1)}%`,\n    threshold: '20%',\n    current_value: `${(data.tasa_repeticiones * 100).toFixed(1)}%`,\n    timestamp: new Date().toISOString()\n  });\n}\n\n// Verificar distribución de turnos desbalanceada\nif (data.turnos_distribution) {\n  const turnos = Object.keys(data.turnos_distribution);\n  const valores = Object.values(data.turnos_distribution);\n  const max_val = Math.max(...valores);\n  const min_val = Math.min(...valores);\n  \n  if (max_val > min_val * 3) {\n    warnings.push({\n      type: 'desbalance_turnos',\n      severity: 'low',\n      message: 'Distribución desbalanceada entre turnos',\n      details: data.turnos_distribution,\n      timestamp: new Date().toISOString()\n    });\n  }\n}\n\nreturn {\n  alerts: alerts,\n  warnings: warnings,\n  total_alerts: alerts.length,\n  total_warnings: warnings.length,\n  check_timestamp: new Date().toISOString(),\n  monitoring_frequency: '5_seconds',\n  chemical_data_summary: data\n};"
+      },
+      "id": "analyze-for-alerts",
+      "name": "Analyze for Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-alerts",
+              "leftValue": "={{ $json.total_alerts }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-alerts",
+      "name": "Has Alerts?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar notificación de alerta crítica\nconst alertData = $input.first().json;\n\nconst criticalAlerts = alertData.alerts.filter(alert => alert.severity === 'high');\nconst mediumAlerts = alertData.alerts.filter(alert => alert.severity === 'medium');\n\nconst notification = {\n  type: 'lab_alert',\n  timestamp: new Date().toISOString(),\n  summary: {\n    critical_count: criticalAlerts.length,\n    medium_count: mediumAlerts.length,\n    warning_count: alertData.total_warnings\n  },\n  critical_alerts: criticalAlerts,\n  medium_alerts: mediumAlerts,\n  warnings: alertData.warnings,\n  requires_immediate_attention: criticalAlerts.length > 0\n};\n\nreturn notification;"
+      },
+      "id": "prepare-alert-notification",
+      "name": "Prepare Alert Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-critical",
+              "leftValue": "={{ $json.requires_immediate_attention }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-critical",
+      "name": "Is Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar email de alerta crítica\nconst notification = $input.first().json;\n\nconst emailData = {\n  to: process.env.LAB_MANAGER_EMAIL || 'manager@lab.com',\n  cc: process.env.LAB_SUPERVISOR_EMAIL || 'supervisor@lab.com',\n  subject: '🚨 ALERTA CRÍTICA - Laboratorio Químico',\n  html: `\n    <div style=\"background-color: #fee; border: 2px solid #f00; padding: 20px; border-radius: 5px;\">\n      <h2 style=\"color: #d00;\">🚨 ALERTA CRÍTICA DEL LABORATORIO</h2>\n      <p><strong>Timestamp:</strong> ${new Date(notification.timestamp).toLocaleString()}</p>\n      \n      <h3>Resumen de Alertas</h3>\n      <ul>\n        <li><strong>Alertas Críticas:</strong> ${notification.summary.critical_count}</li>\n        <li><strong>Alertas Medias:</strong> ${notification.summary.medium_count}</li>\n        <li><strong>Advertencias:</strong> ${notification.summary.warning_count}</li>\n      </ul>\n      \n      ${notification.critical_alerts.length > 0 ? `\n      <h3 style=\"color: #d00;\">🔴 Alertas Críticas (Acción Inmediata Requerida)</h3>\n      <ul>\n        ${notification.critical_alerts.map(alert => `\n          <li style=\"background-color: #ffe6e6; padding: 10px; margin: 5px 0; border-left: 4px solid #f00;\">\n            <strong>${alert.type.toUpperCase()}:</strong> ${alert.message}\n            ${alert.details ? `<br><em>Detalles: ${alert.details}</em>` : ''}\n            ${alert.equipment ? `<br><em>Equipo: ${alert.equipment}</em>` : ''}\n          </li>\n        `).join('')}\n      </ul>\n      ` : ''}\n      \n      ${notification.medium_alerts.length > 0 ? `\n      <h3 style=\"color: #f80;\">🟡 Alertas Medias</h3>\n      <ul>\n        ${notification.medium_alerts.map(alert => `\n          <li style=\"background-color: #fff3cd; padding: 10px; margin: 5px 0; border-left: 4px solid #f80;\">\n            <strong>${alert.type.toUpperCase()}:</strong> ${alert.message}\n            ${alert.details ? `<br><em>Detalles: ${alert.details}</em>` : ''}\n          </li>\n        `).join('')}\n      </ul>\n      ` : ''}\n      \n      <p style=\"margin-top: 20px; font-weight: bold; color: #d00;\">\n        ⚠️ Esta alerta requiere atención inmediata. Por favor, revise el sistema lo antes posible.\n      </p>\n      \n      <p><em>Alerta generada automáticamente por el sistema de monitoreo del laboratorio.</em></p>\n    </div>\n  `\n};\n\nreturn emailData;"
+      },
+      "id": "prepare-critical-email",
+      "name": "Prepare Critical Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 100]
+    },
+    {
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "email": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {
+          "ccList": "={{ $json.cc }}"
+        }
+      },
+      "id": "send-critical-email",
+      "name": "Send Critical Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1780, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ process.env.SLACK_WEBHOOK_URL || 'https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "jsonBody": "={\n  \"text\": \"🚨 ALERTA CRÍTICA - Laboratorio Químico\",\n  \"attachments\": [\n    {\n      \"color\": \"danger\",\n      \"fields\": [\n        {\n          \"title\": \"Alertas Críticas\",\n          \"value\": \"{{ $json.summary.critical_count }}\",\n          \"short\": true\n        },\n        {\n          \"title\": \"Alertas Medias\",\n          \"value\": \"{{ $json.summary.medium_count }}\",\n          \"short\": true\n        }\n      ],\n      \"footer\": \"Sistema de Monitoreo Lab\",\n      \"ts\": {{ Math.floor(Date.now() / 1000) }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "send-slack-alert",
+      "name": "Send Slack Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar email de alerta normal\nconst notification = $input.first().json;\n\nconst emailData = {\n  to: process.env.LAB_TEAM_EMAIL || 'team@lab.com',\n  subject: '⚠️ Alertas del Laboratorio - Revisión Requerida',\n  html: `\n    <div style=\"background-color: #fff3cd; border: 2px solid #f80; padding: 20px; border-radius: 5px;\">\n      <h2 style=\"color: #856404;\">⚠️ Alertas del Laboratorio</h2>\n      <p><strong>Timestamp:</strong> ${new Date(notification.timestamp).toLocaleString()}</p>\n      \n      <h3>Resumen</h3>\n      <ul>\n        <li><strong>Alertas Medias:</strong> ${notification.summary.medium_count}</li>\n        <li><strong>Advertencias:</strong> ${notification.summary.warning_count}</li>\n      </ul>\n      \n      ${notification.medium_alerts.length > 0 ? `\n      <h3>🟡 Alertas que Requieren Atención</h3>\n      <ul>\n        ${notification.medium_alerts.map(alert => `\n          <li style=\"background-color: #fff; padding: 10px; margin: 5px 0; border-left: 4px solid #f80;\">\n            <strong>${alert.type.toUpperCase()}:</strong> ${alert.message}\n            ${alert.details ? `<br><em>Detalles: ${alert.details}</em>` : ''}\n          </li>\n        `).join('')}\n      </ul>\n      ` : ''}\n      \n      ${notification.warnings.length > 0 ? `\n      <h3>ℹ️ Advertencias</h3>\n      <ul>\n        ${notification.warnings.map(warning => `\n          <li style=\"background-color: #d1ecf1; padding: 10px; margin: 5px 0; border-left: 4px solid #17a2b8;\">\n            <strong>${warning.type.toUpperCase()}:</strong> ${warning.message}\n          </li>\n        `).join('')}\n      </ul>\n      ` : ''}\n      \n      <p><em>Reporte generado automáticamente por el sistema de monitoreo.</em></p>\n    </div>\n  `\n};\n\nreturn emailData;"
+      },
+      "id": "prepare-normal-email",
+      "name": "Prepare Normal Alert Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "resource": "email",
+        "operation": "send",
+        "email": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "emailType": "html",
+        "message": "={{ $json.html }}",
+        "options": {}
+      },
+      "id": "send-normal-email",
+      "name": "Send Normal Alert Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1780, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log del monitoreo completado\nconst alertData = $input.first().json;\n\nconsole.log(`🔍 Monitoreo completado: ${new Date().toLocaleString()}`);\nconsole.log(`📊 Alertas detectadas: ${alertData.total_alerts}`);\nconsole.log(`⚠️ Advertencias: ${alertData.total_warnings}`);\n\nif (alertData.total_alerts > 0) {\n  console.log('🚨 Notificaciones enviadas');\n}\n\nreturn {\n  status: 'monitoring_completed',\n  alerts_detected: alertData.total_alerts,\n  warnings_detected: alertData.total_warnings,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "log-monitoring-result",
+      "name": "Log Monitoring Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log de monitoreo sin alertas\nconsole.log(`✅ Monitoreo completado sin alertas: ${new Date().toLocaleString()}`);\n\nreturn {\n  status: 'all_clear',\n  message: 'No se detectaron alertas',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "log-no-alerts",
+      "name": "Log No Alerts",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 400]
+    }
+  ],
+  "connections": {
+    "Real-time Monitoring (5 seconds)": {
+      "main": [
+        [
+          {
+            "node": "Get Recent Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Recent Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze for Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze for Alerts": {
+      "main": [
+        [
+          {
+            "node": "Has Alerts?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Alerts?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Alert Notification",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log No Alerts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Alert Notification": {
+      "main": [
+        [
+          {
+            "node": "Is Critical?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Critical?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Critical Email",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Slack Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Normal Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Critical Email": {
+      "main": [
+        [
+          {
+            "node": "Send Critical Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Critical Alert Email": {
+      "main": [
+        [
+          {
+            "node": "Log Monitoring Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Slack Alert": {
+      "main": [
+        [
+          {
+            "node": "Log Monitoring Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Normal Alert Email": {
+      "main": [
+        [
+          {
+            "node": "Send Normal Alert Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Normal Alert Email": {
+      "main": [
+        [
+          {
+            "node": "Log Monitoring Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "lab-automation",
+      "name": "Lab Automation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

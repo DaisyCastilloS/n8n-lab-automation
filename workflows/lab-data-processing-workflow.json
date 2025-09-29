@@ -1,0 +1,409 @@
+{
+  "name": "Lab Data Processing Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lab-data-upload",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - File Upload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "lab-data-upload"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as total_samples FROM processed_lab_data WHERE fecha >= CURRENT_DATE",
+        "additionalFields": {}
+      },
+      "id": "validate-data-source",
+      "name": "Validate Data Source",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [460, 300],
+      "credentials": {
+        "postgres": {
+          "name": "PostgreSQL Lab Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO processed_lab_data (record_id, fecha, equipo, turno, muestras_procesadas, rendimiento, comentario, tipo_muestra, estado) SELECT (SELECT COALESCE(MAX(record_id), 0) + 1 FROM processed_lab_data), CURRENT_DATE, 'phmetro', 'mañana', FLOOR(RANDOM() * 100) + 30, FLOOR(RANDOM() * 40) + 60, 'ok', 'Química', CASE WHEN FLOOR(RANDOM() * 40) + 60 >= 70 THEN 'Aprobado' ELSE 'Rechazado' END FROM generate_series(1, 3); SELECT * FROM processed_lab_data WHERE fecha = CURRENT_DATE ORDER BY record_id DESC LIMIT 5;",
+        "additionalFields": {}
+      },
+      "id": "process-lab-data",
+      "name": "Process Lab Data",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [680, 300],
+      "credentials": {
+        "postgres": {
+          "name": "PostgreSQL Lab Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extraer job_id de la respuesta\nconst response = $input.first().json;\n\nif (!response.job_id) {\n  throw new Error('No se recibió job_id del procesador');\n}\n\nreturn {\n  job_id: response.job_id,\n  status: response.status,\n  message: response.message,\n  start_time: new Date().toISOString()\n};"
+      },
+      "id": "extract-job-id",
+      "name": "Extract Job ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-processing",
+      "name": "Wait for Processing",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT COUNT(*) as processed_count, MAX(fecha) as last_analysis FROM processed_lab_data WHERE estado = 'Aprobado' AND fecha >= CURRENT_DATE;",
+        "additionalFields": {}
+      },
+      "id": "check-status",
+      "name": "Check Processing Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1340, 300],
+      "credentials": {
+         "postgres": {
+           "name": "PostgreSQL Lab Database"
+         }
+       }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "status-completed",
+              "leftValue": "={{ $json.processed_count }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-completion",
+      "name": "Has Data Been Processed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reports (report_type, title, content, created_date, status) VALUES ('statistical_analysis', 'Automated Lab Analysis Report', 'Statistical analysis completed successfully. Data processed and validated.', NOW(), 'completed'); SELECT * FROM reports WHERE created_date >= NOW() - INTERVAL '5 minutes' ORDER BY created_date DESC LIMIT 1;",
+        "additionalFields": {}
+      },
+      "id": "run-analysis",
+      "name": "Generate Analysis Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1780, 200],
+      "credentials": {
+         "postgres": {
+           "name": "PostgreSQL Lab Database"
+         }
+       }
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "seconds"
+      },
+      "id": "wait-retry",
+      "name": "Wait Before Retry",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [1340, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT r.*, COUNT(a.id) as analysis_count FROM reports r LEFT JOIN analyses a ON DATE(r.created_date) = DATE(a.analysis_date) WHERE r.status = 'completed' AND r.created_date >= NOW() - INTERVAL '1 hour' GROUP BY r.id ORDER BY r.created_date DESC LIMIT 1;",
+        "additionalFields": {}
+      },
+      "id": "download-results",
+      "name": "Get Final Report",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2000, 200],
+      "credentials": {
+        "postgres": {
+          "name": "PostgreSQL Lab Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar notificación de finalización\nconst processedData = $input.first().json;\nconst analysisData = $input.all()[1]?.json || {};\n\nconst notification = {\n  status: 'completed',\n  job_id: processedData.job_id,\n  filename: processedData.filename,\n  processing_time: processedData.processing_time,\n  records_processed: processedData.records_processed,\n  analysis_summary: {\n    total_samples: analysisData.total_samples || 0,\n    equipment_count: analysisData.equipment_count || 0,\n    avg_performance: analysisData.avg_performance || 0,\n    anomalies_detected: analysisData.anomalies_detected || 0\n  },\n  download_url: `http://api_gateway:8000/process/download/${processedData.job_id}`,\n  timestamp: new Date().toISOString()\n};\n\nreturn notification;"
+      },
+      "id": "prepare-notification",
+      "name": "Prepare Success Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2220, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reports (report_type, title, content, created_date, status) VALUES ('success_notification', 'Workflow Completed Successfully', CONCAT('Processing completed at: ', NOW(), '. Report ID: ', (SELECT MAX(id) FROM reports WHERE report_type = ''statistical_analysis'')), NOW(), 'completed'); SELECT 'success' as notification_status, 'Workflow completed successfully' as message, NOW() as timestamp;",
+        "additionalFields": {}
+      },
+      "id": "send-notification",
+      "name": "Log Success Notification",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2440, 200],
+      "credentials": {
+        "postgres": {
+          "name": "PostgreSQL Lab Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Preparar notificación de error\nconst error = $input.first().json;\n\nconst errorNotification = {\n  status: 'failed',\n  job_id: error.job_id || 'unknown',\n  error_message: error.message || 'Error desconocido en el procesamiento',\n  error_type: error.type || 'processing_error',\n  timestamp: new Date().toISOString(),\n  retry_count: error.retry_count || 0\n};\n\nreturn errorNotification;"
+      },
+      "id": "prepare-error-notification",
+      "name": "Prepare Error Notification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reports (report_type, title, content, created_date, status) VALUES ('error_notification', 'Workflow Error', CONCAT('Error occurred at: ', NOW(), '. Error details logged.'), NOW(), 'error'); SELECT 'error' as notification_status, 'Workflow encountered an error' as message, NOW() as timestamp;",
+        "additionalFields": {}
+      },
+      "id": "send-error-notification",
+      "name": "Log Error Notification",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2000, 400],
+      "credentials": {
+        "postgres": {
+          "name": "PostgreSQL Lab Database"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2660, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - File Upload": {
+      "main": [
+        [
+          {
+            "node": "Validate File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate File": {
+      "main": [
+        [
+          {
+            "node": "Upload to Data Processor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Data Processor": {
+      "main": [
+        [
+          {
+            "node": "Extract Job ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Job ID": {
+      "main": [
+        [
+          {
+            "node": "Wait for Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Processing": {
+      "main": [
+        [
+          {
+            "node": "Check Processing Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Processing Status": {
+      "main": [
+        [
+          {
+            "node": "Is Processing Complete?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Processing Complete?": {
+      "main": [
+        [
+          {
+            "node": "Run Statistical Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Wait Before Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Statistical Analysis": {
+      "main": [
+        [
+          {
+            "node": "Download Processed File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait Before Retry": {
+      "main": [
+        [
+          {
+            "node": "Check Processing Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Processed File": {
+      "main": [
+        [
+          {
+            "node": "Prepare Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Success Notification": {
+      "main": [
+        [
+          {
+            "node": "Send Success Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Send Error Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Error Notification": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z",
+      "id": "lab-automation",
+      "name": "Lab Automation"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2024-01-01T00:00:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,122 @@
+{
+  "name": "Simple JSON Processing",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-001",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "filePath": "/data/produccion_limpia_final.json",
+        "options": {}
+      },
+      "id": "read-file-001",
+      "name": "Read JSON File",
+      "type": "n8n-nodes-base.readBinaryFile",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Procesar el archivo JSON leído\nconst binaryData = $input.first().binary;\nif (!binaryData || !binaryData.data) {\n  throw new Error('No se pudo leer el archivo JSON');\n}\n\n// Convertir el buffer a string y parsear JSON\nconst jsonString = Buffer.from(binaryData.data, 'base64').toString('utf8');\nconst fileData = JSON.parse(jsonString);\n\n// Extraer metadata y datos\nconst metadata = fileData.metadata || {};\nconst records = fileData.data || [];\n\nconsole.log('Metadata:', metadata);\nconsole.log('Total records found:', records.length);\n\nif (records.length === 0) {\n  return [{ json: { error: 'No hay registros para procesar', total_records: 0 } }];\n}\n\n// Procesar registros\nconst processedRecords = records.map((record, index) => {\n  return {\n    record_id: `lab_${Date.now()}_${index + 1}`,\n    fecha: record.fecha || new Date().toISOString().split('T')[0],\n    equipo: record.equipo || 'Desconocido',\n    turno: record.turno || 'No especificado',\n    muestras_procesadas: parseInt(record.muestras_procesadas) || 0,\n    rendimiento: parseFloat(record.rendimiento) || 0,\n    comentario: record.comentario || 'Sin comentarios',\n    tipo_muestra: 'Química',\n    estado: (parseFloat(record.rendimiento) || 0) >= 70 ? 'Aprobado' : 'Rechazado',\n    fecha_procesamiento: new Date().toISOString()\n  };\n});\n\n// Generar estadísticas\nconst equiposUnicos = [...new Set(records.map(r => r.equipo).filter(Boolean))];\nconst turnosUnicos = [...new Set(records.map(r => r.turno).filter(Boolean))];\nconst promedioRendimiento = records.reduce((sum, r) => sum + (parseFloat(r.rendimiento) || 0), 0) / records.length;\n\nconst statistics = {\n  fecha_calculo: new Date().toISOString().split('T')[0],\n  total_muestras: records.reduce((sum, r) => sum + (parseInt(r.muestras_procesadas) || 0), 0),\n  promedio_rendimiento: Math.round(promedioRendimiento * 100) / 100,\n  equipos_activos: equiposUnicos.length,\n  turnos_trabajados: turnosUnicos.length,\n  equipos_unicos: equiposUnicos.join(', '),\n  turnos_unicos: turnosUnicos.join(', '),\n  registros_procesados: processedRecords.length,\n  fecha_procesamiento: new Date().toISOString()\n};\n\nconsole.log('Processed records:', processedRecords.length);\nconsole.log('Statistics:', statistics);\n\nreturn [\n  {\n    json: {\n      success: true,\n      total_records: processedRecords.length,\n      records: processedRecords,\n      statistics: statistics\n    }\n  }\n];"
+      },
+      "id": "process-data-001",
+      "name": "Process Lab Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO processed_lab_data (record_id, fecha, equipo, turno, muestras_procesadas, rendimiento, comentario, tipo_muestra, estado, fecha_procesamiento) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)",
+        "additionalFields": {
+          "mode": "multiple"
+        }
+      },
+      "id": "insert-records-001",
+      "name": "Insert Records",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [900, 200],
+      "credentials": {
+        "postgres": {
+          "id": "lab-postgres-creds",
+          "name": "Lab PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO lab_statistics (fecha_calculo, total_muestras, promedio_rendimiento, equipos_activos, turnos_trabajados, equipos_unicos, turnos_unicos, registros_procesados, fecha_procesamiento) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+        "additionalFields": {}
+      },
+      "id": "insert-stats-001",
+      "name": "Insert Statistics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [900, 400],
+      "credentials": {
+        "postgres": {
+          "id": "lab-postgres-creds",
+          "name": "Lab PostgreSQL"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read JSON File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read JSON File": {
+      "main": [
+        [
+          {
+            "node": "Process Lab Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Lab Data": {
+      "main": [
+        [
+          {
+            "node": "Insert Records",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Insert Statistics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "simple-json-processing",
+  "tags": []
+}

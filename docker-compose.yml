@@ -1,0 +1,124 @@
+
+
+services:
+  # Base de datos PostgreSQL para datos del laboratorio
+  postgres:
+    image: postgres:16-alpine
+    container_name: lab_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-lab_analytics}
+      POSTGRES_USER: ${POSTGRES_USER:-lab_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-lab_password}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./services/database/init:/docker-entrypoint-initdb.d
+    networks:
+      - lab_network
+    restart: unless-stopped
+
+  # n8n - Orquestador de workflows (usando SQLite y CSV)
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: lab_n8n
+    environment:
+      - N8N_USER_MANAGEMENT_DISABLED=true
+      - N8N_DISABLE_UI=false
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD:-admin123}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+      - GENERIC_TIMEZONE=America/Santiago
+      - N8N_RUNNERS_ENABLED=true
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_PERSONALIZATION_ENABLED=false
+      - N8N_VERSION_NOTIFICATIONS_ENABLED=false
+      - N8N_TEMPLATES_ENABLED=false
+      - N8N_ONBOARDING_FLOW_DISABLED=true
+      - N8N_DIAGNOSTICS_ENABLED=false
+      - N8N_HIRING_BANNER_ENABLED=false
+      - N8N_SECURE_COOKIE=false
+      - N8N_EDITOR_BASE_URL=http://localhost:5678
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+      # Usando SQLite por defecto (más simple para CSV)
+      - DB_SQLITE_POOL_SIZE=5
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+      - ./data:/data  # CSV limpio disponible en /data/produccion_limpia_final.csv
+    depends_on:
+      - redis
+    networks:
+      - lab_network
+    restart: unless-stopped
+
+  # Servicio de procesamiento de datos
+  data_processor:
+    build:
+      context: ./services/data_processor
+      dockerfile: Dockerfile
+    container_name: lab_data_processor
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lab_user}:${POSTGRES_PASSWORD:-lab_password}@postgres:5432/${POSTGRES_DB:-lab_analytics}
+      - API_HOST=0.0.0.0
+      - API_PORT=8001
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./data:/app/data
+      - ./services/data_processor/logs:/app/logs
+    depends_on:
+      - postgres
+    networks:
+      - lab_network
+    restart: unless-stopped
+
+  # API Gateway
+  api_gateway:
+    build:
+      context: ./services/api_gateway
+      dockerfile: Dockerfile
+    container_name: lab_api_gateway
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-lab_user}:${POSTGRES_PASSWORD:-lab_password}@postgres:5432/${POSTGRES_DB:-lab_analytics}
+      - DATA_PROCESSOR_URL=http://data_processor:8001
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./services/api_gateway/logs:/app/logs
+    depends_on:
+      - postgres
+      - data_processor
+    networks:
+      - lab_network
+    restart: unless-stopped
+
+  # Redis para caché (opcional)
+  redis:
+    image: redis:7-alpine
+    container_name: lab_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - lab_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  n8n_data:
+  redis_data:
+
+networks:
+  lab_network:
+    driver: bridge

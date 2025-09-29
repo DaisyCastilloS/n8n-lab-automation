@@ -1,0 +1,37 @@
+# Variables de entorno con credenciales
+.env
+.env.local
+.env.production
+
+# Logs
+*.log
+logs/
+services/*/logs/
+
+# Datos sensibles
+data/input/*
+data/output/*
+data/backup/*
+!data/input/.gitkeep
+!data/output/.gitkeep
+!data/backup/.gitkeep
+
+# Docker
+.docker/
+
+# Archivos temporales
+*.tmp
+*.temp
+.DS_Store
+
+# Configuraciones locales de n8n
+n8n_data/
+
+# Certificados SSL
+*.pem
+*.key
+*.crt
+
+# Backups de base de datos
+*.sql
+*.dump
